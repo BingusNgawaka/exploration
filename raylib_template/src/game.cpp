@@ -60,6 +60,14 @@ Vec2 Vec2::lerp(Vec2 otherVec, float t){
     return Vec2(this->operator-((this->operator-(otherVec)) * t));
 }
 
+void Vec2::drawPoint(){
+    DrawCircleLines(this->x, this->y, 10, RED);
+}
+
+void Vec2::drawLineTo(Vec2 otherVec, Color col){
+    DrawLine(this->x, this->y, otherVec.x, otherVec.y, col);
+}
+
 Rect::Rect(): pos(Vec2()), size(Vec2()){}
 Rect::Rect(float x, float y, float w, float h)
     : pos(Vec2(x, y)), size(Vec2(w,h)){}
@@ -168,7 +176,7 @@ Game::Game(int init_windowW, int init_windowH, std::string init_title)
     : windowW(init_windowW), windowH(init_windowH), title(init_title)
 {
     InitWindow(windowW, windowH, title.c_str());
-    SetTargetFPS(60);
+    SetTargetFPS(360);
 
     std::cout << windowW << "x" << windowH << "\n";
 }

@@ -175,9 +175,7 @@ float initPos(int x){
 int main(){
     Game game {800, 600, "1D Wave Equation"};
 
-    for(int i = 0; i < 150; i++){
-        game.add_entity(new WaveSim(&game, 800, 0.016, 5, 300, initPos, initPos));
-    }
+    game.add_entity(new WaveSim(&game, 800, 0.016, 5, 300, initPos, initPos));
 
     game.main();
     return 0;

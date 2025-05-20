@@ -30,6 +30,8 @@ struct Vec2 {
     Vec2 lerp(Vec2 otherVec, float t);
 
     void print() const;
+    void drawPoint();
+    void drawLineTo(Vec2 otherVec, Color col);
 };
 
 // Rect definition, def with either (pos, size) or (x,y,w,h)

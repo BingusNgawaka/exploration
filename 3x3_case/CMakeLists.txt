@@ -38,5 +38,12 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT "-fsanitize=address,undefined")
 set(CMAKE_CXX_EXE_LINKER_FLAGS_DEBUG_INIT "-fsanitize=address,undefined")
 set(CMAKE_CXX_EXE_LINKER_FLAGS_RELWITHDEBINFO_INIT "-fsanitize=address,undefined")
 
+# find eigen dir (lin alg tools)
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+
 # Create main executable.
 add_executable(main main.cpp)
+
+# link eigen
+target_link_libraries (main Eigen3::Eigen)
+
