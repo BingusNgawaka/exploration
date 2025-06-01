@@ -112,6 +112,13 @@ struct Vec3 {
         return Vec3(x/t, y/t, z/t);
     }
 
+    Vec3 operator=(const Vec3& other){
+        x = other.x;
+        y = other.y;
+        z = other.z;
+        return *this;
+    }
+
     Vec3 operator+=(const Vec3& other){
         x += other.x;
         y += other.y;
@@ -152,6 +159,11 @@ struct Vec3 {
         double n = 1/mag();
         return Vec3(x*n,y*n,z*n);
     }
+
+    const bool near_zero() const{
+        double epsilon {1e-8};
+        return (std::fabs(x)<epsilon && std::fabs(y)<epsilon && std::fabs(z)<epsilon);
+    }
 };
 const Vec3 operator*(double t, const Vec3& v){
     return Vec3(t*v.x, t*v.y, t*v.z);
@@ -174,13 +186,25 @@ Vec3 rand_unit_vec(){
     }
 }
 
-Vec3 rand_vec_on_hemisphere(Vec3& norm){
+Vec3 rand_vec_on_hemisphere(const Vec3& norm){
     Vec3 vec_on_sphere {rand_unit_vec()};
     if(dot(vec_on_sphere, norm) > 0){
         // lies within the correct hemisphere
         return vec_on_sphere;
     }
     return -vec_on_sphere;
+}
+
+Vec3 reflect(const Vec3& v, const Vec3& n){
+    return v - 2*dot(v,n)*n;
+}
+
+// this shi just snells law
+Vec3 refract(const Vec3& v, const Vec3& n, double etai_over_etat){
+    double cos_theta {std::fmin(dot(-v, n), 1.0)}; // clamped to 1
+    Vec3 r_out_perp {etai_over_etat*(v+cos_theta*n)};
+    Vec3 r_out_par {-std::sqrt(std::fabs(1.0-r_out_perp.magSqrd())) * n};
+    return r_out_perp + r_out_par;
 }
 
 struct ray{
@@ -201,11 +225,15 @@ struct ray{
     }
 };
 
+struct material; // HitRecord needs a ref to material and vice versa
+
 struct HitRecord{
     Vec3 p;
     Vec3 norm;
     double t;
     bool front_face;
+
+    std::shared_ptr<material> mat;
 
     void set_face_norm(const ray& r, const Vec3& out_norm){
         front_face = dot(r.dir(), out_norm) < 0;
@@ -217,14 +245,92 @@ struct Hittable{
     virtual ~Hittable() = default;
 };
 
+
+struct material{
+    virtual ~material() = default;
+
+    virtual bool scatter(const ray& r_in, const HitRecord& rec, Vec3& atten, ray& scattered) const {
+        return false;
+    }
+};
+
+struct lambertian : public material { // basic diffuse like our first test sphere
+    Vec3 albedo; // latin for whiteness
+
+    lambertian(const Vec3& albedo): albedo(albedo){}
+
+    virtual bool scatter(const ray& r_in, const HitRecord& rec, Vec3& atten, ray& scattered) const override{
+        Vec3 scatter_dir {rec.norm + rand_unit_vec()};
+        if(scatter_dir.near_zero()){
+            scatter_dir = rec.norm;
+        }
+        scattered = ray(rec.p, scatter_dir);
+        atten = albedo;
+        return true;
+    }
+};
+
+struct metal : public material { 
+    Vec3 albedo; // latin for whiteness
+    double fuzz; // always < 1
+
+    metal(const Vec3& albedo, double fuzz): albedo(albedo), fuzz(fuzz < 1 ? fuzz : 1) {}
+
+    virtual bool scatter(const ray& r_in, const HitRecord& rec, Vec3& atten, ray& scattered) const override{
+        Vec3 reflected_dir {reflect(r_in.dir(), rec.norm)};
+        reflected_dir = reflected_dir.normalized() + fuzz*rand_unit_vec();
+        scattered = ray(rec.p, reflected_dir);
+        atten = albedo;
+        return (dot(scattered.dir(), rec.norm) > 0);
+    }
+};
+
+struct dielectric : public material { 
+    double refraction_index;
+
+    dielectric(double refraction_index): refraction_index(refraction_index){}
+
+    static double reflectance(double cos_theta, double ri){
+        // schlicks approx for reflectance (varying reflectivity with angle)
+        double r0 = (1-ri)/(1+ri);
+        r0 = r0*r0;
+        return r0 + (1-r0)*std::pow((1-cos_theta),5);
+    }
+
+    virtual bool scatter(const ray& r_in, const HitRecord& rec, Vec3& atten, ray& scattered) const override{
+        atten = Vec3(1.0,1.0,1.0);
+        double ri {rec.front_face ? (1.0/refraction_index) : refraction_index};
+
+        Vec3 u_dir {r_in.dir().normalized()};
+
+        double cos_theta {std::fmin(dot(-u_dir, rec.norm), 1.0)}; // clamped to 1
+        double sin_theta {std::sqrt(1.0 - cos_theta*cos_theta)};
+        Vec3 dir;
+        bool cannot_refract {ri * sin_theta > 1.0};
+        if(cannot_refract || reflectance(cos_theta, ri) > fast_rand_double()){
+            // must reflect
+            dir = reflect(u_dir, rec.norm);
+        }else{
+            // can refract
+            dir = refract(u_dir, rec.norm, ri);
+        }
+
+        scattered = ray(rec.p, dir);
+        return true;
+    }
+};
+
 struct Sphere : public Hittable{
     Vec3 center;
     double radius;
     double radiusSqrd;
     double radiusInv;
+    std::shared_ptr<material> mat;
 
-    Sphere(Vec3 center, double r):
-        center(center), radius(r), radiusSqrd(r*r), radiusInv(1.0/r){}
+    Sphere(Vec3 center, double r, std::shared_ptr<material> mat):
+        center(center), radius(r), radiusSqrd(r*r), radiusInv(1.0/r), mat(mat)
+    {}
+
     bool hit(const ray& r, Interval t_range, HitRecord& rec) const override {
         Vec3 oc = center - r.orig;
         double h {dot(r.dir(), oc)};
@@ -247,6 +353,7 @@ struct Sphere : public Hittable{
         rec.t = t;
         rec.p = r.orig + t*r.dir();
         rec.set_face_norm(r, radiusInv*(rec.p - center));
+        rec.mat = mat;
 
         return true;
     }
@@ -331,13 +438,18 @@ class Screen : public Entity{
 
         Vec3 get_ray_color(const ray& r){
             if(curr_depth >= max_depth){
-                return Vec3(0,0,0);
+                return Vec3();
             }
+            ++curr_depth;
+
             HitRecord rec;
             if(get_world_hit(r, rec)){
-                ++curr_depth;
-                Vec3 dir {rec.norm + rand_unit_vec()};
-                return 0.5 * get_ray_color(ray(rec.p, dir));
+                ray scattered;
+                Vec3 atten;
+                if(rec.mat->scatter(r, rec, atten, scattered)){
+                    return atten*get_ray_color(scattered);
+                }
+                return Vec3();
             }
             Vec3 unit_dir {r.dir().normalized()};
             float a = 0.5*(unit_dir.y + 1.0);
@@ -388,14 +500,24 @@ class Screen : public Entity{
 };
 
 int main(){
-    Game game {640, 360, "uwu"}; // w, h, title
-    std::unique_ptr<Screen> scr {std::make_unique<Screen>(game, 2.0, 160*1, 16.0/9.0)};
+    int upscale {2};
+    Game game {400*upscale, 225*upscale, "uwu"}; // w, h, title
+    std::unique_ptr<Screen> scr {std::make_unique<Screen>(game, 2.0, 400, 16.0/9.0)};
 
-    scr->add_hittable(std::make_shared<Sphere>(Vec3(0,0,-1), 0.5));
-    scr->add_hittable(std::make_shared<Sphere>(Vec3(0,-100.5,-1), 100));
+    std::shared_ptr<material> ground {std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.0))};
+    std::shared_ptr<material> mat1 {std::make_shared<lambertian>(Vec3(0.1, 0.2, 0.5))};
+    std::shared_ptr<material> mat2 {std::make_shared<dielectric>(1.50)};
+    std::shared_ptr<material> bubble {std::make_shared<dielectric>(1.0/1.50)};
+    std::shared_ptr<material> mat3 {std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.3)};
+
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(0,-100.5,-1), 100, ground));
+
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(-0.5,0,-1), 0.5, mat2));
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(-0.5,0,-1), 0.4, bubble));
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(0.5,0,-1), 0.5, mat3));
 
 
-    scr->update_screen(); // performance getting way too slow for real time lol just do once up top
+    scr->update_screen(); // performance getting way too slow for real time lol just do once at start
     game.add_entity(std::move(scr));
 
     game.main();
