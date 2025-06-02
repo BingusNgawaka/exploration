@@ -171,8 +171,15 @@ const Vec3 operator*(double t, const Vec3& v){
 const std::ostream& operator<<(std::ostream& out, const Vec3& v){
     return out << "(" << v.x << ", " << v.y << ", " << v.z << ")";
 }
-const double dot(const Vec3& v1, const Vec3& v2){
+double dot(const Vec3& v1, const Vec3& v2){
     return (v1.x*v2.x + v1.y*v2.y + v1.z*v2.z);
+}
+Vec3 cross(const Vec3& v1, const Vec3& v2){
+    return Vec3(
+            v1.y*v2.z-v1.z*v2.y,
+            v1.z*v2.x-v1.x*v2.z,
+            v1.x*v2.y-v1.y*v2.x
+    );
 }
 
 // get a rand vec that lies on the unit sphere
@@ -373,6 +380,13 @@ class Screen : public Entity{
         Vec3 pixel_dv {};
         double focal_length {1};
 
+        double fov {20};
+        Vec3 lookfrom {-2, 2, 1};
+        Vec3 lookat {0,0,-1};
+        Vec3 up {0,1,0};
+
+        Vec3 u, v, w;
+
         PixelTexture pixels;
         Game& game_ref;
 
@@ -387,20 +401,31 @@ class Screen : public Entity{
         double samples_scale {1.0/samples_per_pixel};
 
     public:
-        Screen(Game& game, double viewport_height, int image_width, double aspect_ratio):
+        Screen(Game& game, int image_width, double aspect_ratio):
             game_ref(game), image_width(image_width), image_height(image_width/aspect_ratio), pixels(image_width, image_height)
         {
-            viewport_height = viewport_height;
-            viewport_width = viewport_height*(static_cast<double>(game.windowW)/game.windowH);
+
+            camera_center = lookfrom;
+            focal_length = (lookfrom - lookat).mag();
+
+            double theta {fov*DEG2RAD};
+            double h {tan(theta/2)};
+
+            viewport_height = 2*h*focal_length;
+            viewport_width = viewport_height*(static_cast<double>(image_width)/image_height);
+
+            w = (lookfrom-lookat).normalized();
+            u = cross(up, w).normalized();
+            v = cross(w, u);
             
             // right hand coord system
-            Vec3 viewport_u {viewport_width, 0, 0}; // top right
-            Vec3 viewport_v {0, -viewport_height, 0}; // bot left
+            Vec3 viewport_u {viewport_width*u}; // top right
+            Vec3 viewport_v {viewport_height*-v}; // bot left
 
             pixel_du = viewport_u/image_width;
             pixel_dv = viewport_v/image_height;
 
-            Vec3 viewport_top_left {camera_center - Vec3(0, 0, focal_length) - viewport_u/2 - viewport_v/2};
+            Vec3 viewport_top_left {camera_center - focal_length*w - viewport_u/2 - viewport_v/2};
             pixel00 = viewport_top_left + 0.5*(pixel_du+pixel_dv);
         }
 
@@ -502,7 +527,7 @@ class Screen : public Entity{
 int main(){
     int upscale {2};
     Game game {400*upscale, 225*upscale, "uwu"}; // w, h, title
-    std::unique_ptr<Screen> scr {std::make_unique<Screen>(game, 2.0, 400, 16.0/9.0)};
+    std::unique_ptr<Screen> scr {std::make_unique<Screen>(game, 400, 16.0/9.0)};
 
     std::shared_ptr<material> ground {std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.0))};
     std::shared_ptr<material> mat1 {std::make_shared<lambertian>(Vec3(0.1, 0.2, 0.5))};
@@ -512,10 +537,10 @@ int main(){
 
     scr->add_hittable(std::make_shared<Sphere>(Vec3(0,-100.5,-1), 100, ground));
 
-    scr->add_hittable(std::make_shared<Sphere>(Vec3(-0.5,0,-1), 0.5, mat2));
-    scr->add_hittable(std::make_shared<Sphere>(Vec3(-0.5,0,-1), 0.4, bubble));
-    scr->add_hittable(std::make_shared<Sphere>(Vec3(0.5,0,-1), 0.5, mat3));
-
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(-1.0,0,-1), 0.5, mat2));
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(-1.0,0,-1), 0.4, bubble));
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(1.0,0,-1), 0.5, mat3));
+    scr->add_hittable(std::make_shared<Sphere>(Vec3(0.0,0,-1.2), 0.5, mat1));
 
     scr->update_screen(); // performance getting way too slow for real time lol just do once at start
     game.add_entity(std::move(scr));
