@@ -179,7 +179,6 @@ PixelTexture::PixelTexture(int width, int height){
 
 PixelTexture::~PixelTexture(){
     UnloadTexture(pixelTexture);
-    UnloadImage(pixelImage);
     free(pixelArray);
 }
 
