@@ -96,6 +96,7 @@ struct Vec3 {
         float epsilon {1e-8};
         return (std::fabs(x)<epsilon && std::fabs(y)<epsilon && std::fabs(z)<epsilon);
     }
+    Vec3 rotate(const Vec3& axisOfRot, float theta) const;
 };
 const Vec3 operator*(float t, const Vec3& v){
     return Vec3(t*v.x, t*v.y, t*v.z);
@@ -113,4 +114,9 @@ Vec3 cross(const Vec3& v1, const Vec3& v2){
             v1.x*v2.y-v1.y*v2.x
     );
 }
-
+Vec3 Vec3::rotate(const Vec3& axisOfRot, float theta) const{
+    // axisOfRot is assumed to be normalized already
+    // rodrigues' formula cause i dont wanna use quaternions
+    // https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
+    return cos(theta)*(*this) + sin(theta)*cross(axisOfRot, *this) + dot(axisOfRot, *this)*(1-cos(theta))*axisOfRot;
+}
