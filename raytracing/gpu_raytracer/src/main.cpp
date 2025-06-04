@@ -4,8 +4,11 @@
 #include <string>
 #include <unordered_map>
 
-#define SCREEN_W 640*2
-#define SCREEN_H 360*2
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h"
+
+#define SCREEN_W 640
+#define SCREEN_H 360
 #define MAX_SPHERES 128
 #define LAMBERTIAN 0
 #define METAL 1
@@ -24,13 +27,14 @@ struct myCamera {
     float fov, aspectRatio;
 
     int samplesPerPixel {10};
+    int maxDepth {10};
 
     Vec3 target, up;
 
     std::unordered_map<std::string, int> shaderLocs {
         {"cameraPos", 0},{"cameraU", 0},{"cameraV", 0},{"cameraW", 0},
         {"focalLength", 0},{"viewportWidth", 0},{"viewportHeight", 0},
-        {"samplesPerPixel", 0}
+        {"samplesPerPixel", 0},{"maxDepth", 0}
     };
 
     myCamera(const Vec3& pos, const Vec3& target, const Vec3& up, float fov, float aspectRatio, const Shader& shader)
@@ -87,6 +91,7 @@ struct myCamera {
         SetShaderValue(shader, shaderLocs["viewportWidth"], &viewportWidth, SHADER_UNIFORM_FLOAT);
         SetShaderValue(shader, shaderLocs["viewportHeight"], &viewportHeight, SHADER_UNIFORM_FLOAT);
         SetShaderValue(shader, shaderLocs["samplesPerPixel"], &samplesPerPixel, SHADER_UNIFORM_INT);
+        SetShaderValue(shader, shaderLocs["maxDepth"], &maxDepth, SHADER_UNIFORM_INT);
     }
 };
 
@@ -96,11 +101,10 @@ struct material{
     float fuzz;
     float refractionIndex;
     float emissionStr;
-    Vec3 emissionCol;
 
-    material(int type, const Vec3& col, float fuzz, float refractionIndex, float emissionStr, const Vec3& emissionCol):
+    material(int type, const Vec3& col, float fuzz, float refractionIndex, float emissionStr):
         type(type), col(col), fuzz(fuzz), refractionIndex(refractionIndex),
-        emissionStr(emissionStr), emissionCol(emissionCol){}
+        emissionStr(emissionStr){}
 };
 
 struct Sphere{
@@ -144,16 +148,38 @@ class Screen : public Entity{
                 spheres.push_back(Sphere({range*GetRandomValue(-10, 10),range*GetRandomValue(-10, 10), -1},GetRandomValue(1, 10)/10.0));
             }
             */
-            material ground {LAMBERTIAN, {0.8,0.8,0}, 0,0,0,{}};
-            material left {METAL, {0.8,0.8,0.8}, 0.3,0,0,{}};
-            material center {LAMBERTIAN, {0.1,0.2,0.5}, 0,0,0,{}};
-            material right {METAL, {0.8,0.6,0.2}, 1,0,0,{}};
+            material ground {
+                LAMBERTIAN, {0.8,0.8,0}, // type, col
+                0,0, // fuzz, refractionIndex
+                0 // emission strength
+            };
+            material left {
+                DIELECTRIC, {1,1,1},
+                0, 1.50,
+                0
+            };
+            material bubble {
+                DIELECTRIC, {1,1,1},
+                0, 1.0/1.50,
+                0
+            };
+            material center {
+                LAMBERTIAN, {1,1,1},
+                0, 0,
+                2
+            };
+            material right {
+                METAL, {0.8,0.6,0.2},
+                0.7, 0,
+                0
+            };
 
-            spheres.push_back(Sphere({0,0,-1.2},0.5,center));
             spheres.push_back(Sphere({-1,0,-1},0.5,left));
+            spheres.push_back(Sphere({-1,0,-1},0.4,bubble));
             spheres.push_back(Sphere({1,0,-1},0.5,right));
 
             spheres.push_back(Sphere({0,-100.5,-1},100.0,ground));
+            spheres.push_back(Sphere({0,1.2,-1.2},0.5,center));
 
             // -------------------------------------- //
         }
@@ -215,6 +241,7 @@ class Screen : public Entity{
             Vec3 cols[MAX_SPHERES];
             float fuzz[MAX_SPHERES];
             float refracs[MAX_SPHERES];
+            float strs[MAX_SPHERES];
 
             int centersLoc {GetShaderLocation(shader, "sphereCenters")};
             int radiiLoc {GetShaderLocation(shader, "sphereRadii")};
@@ -224,6 +251,7 @@ class Screen : public Entity{
             int colsLoc {GetShaderLocation(shader, "materialCols")};
             int fuzzLoc {GetShaderLocation(shader, "materialFuzz")};
             int refracLoc {GetShaderLocation(shader, "materialRefractionIndices")};
+            int strsLoc {GetShaderLocation(shader, "materialEmissionStrs")};
 
             int count {static_cast<int>(spheres.size())};
             for(int i = 0; i < count; ++i){
@@ -234,6 +262,7 @@ class Screen : public Entity{
                 cols[i] = spheres.at(i).mat.col;
                 fuzz[i] = spheres.at(i).mat.fuzz;
                 refracs[i] = spheres.at(i).mat.refractionIndex;
+                strs[i] = spheres.at(i).mat.emissionStr;
             }
             SetShaderValueV(shader, centersLoc, centers, SHADER_UNIFORM_VEC3, count);
             SetShaderValueV(shader, radiiLoc, radii, SHADER_UNIFORM_FLOAT, count);
@@ -243,6 +272,7 @@ class Screen : public Entity{
             SetShaderValueV(shader, colsLoc, cols, SHADER_UNIFORM_VEC3, count);
             SetShaderValueV(shader, fuzzLoc, fuzz, SHADER_UNIFORM_FLOAT, count);
             SetShaderValueV(shader, refracLoc, refracs, SHADER_UNIFORM_FLOAT, count);
+            SetShaderValueV(shader, strsLoc, strs, SHADER_UNIFORM_FLOAT, count);
         }
 
         void draw() override{
@@ -259,6 +289,16 @@ class Screen : public Entity{
             DrawTexturePro(screenTexture.texture, src, dest, {0,0}, 0.0f, WHITE);
             EndShaderMode();
             DrawFPS(10, 10);
+
+            float xPos {200};
+            float yPos {10};
+            float w {100};
+            float h {20};
+            float samplesPerPixelFloat {static_cast<float>(camera.samplesPerPixel)};
+            GuiSlider ( Rectangle{ xPos, yPos, w, h },
+            ("samplesPerPixel ("+std::to_string(camera.samplesPerPixel)+")").c_str(), NULL, &samplesPerPixelFloat, 1, 1000 );
+
+            camera.samplesPerPixel = static_cast<int>(samplesPerPixelFloat);
         }
 };
 
