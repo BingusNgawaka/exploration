@@ -7,6 +7,9 @@
 #define SCREEN_W 640*2
 #define SCREEN_H 360*2
 #define MAX_SPHERES 128
+#define LAMBERTIAN 0
+#define METAL 1
+#define DIELECTRIC 2
 
 struct myCamera {
     Vec3 pos;
@@ -20,11 +23,14 @@ struct myCamera {
     float focalLength, viewportHeight, viewportWidth;
     float fov, aspectRatio;
 
+    int samplesPerPixel {10};
+
     Vec3 target, up;
 
     std::unordered_map<std::string, int> shaderLocs {
         {"cameraPos", 0},{"cameraU", 0},{"cameraV", 0},{"cameraW", 0},
         {"focalLength", 0},{"viewportWidth", 0},{"viewportHeight", 0},
+        {"samplesPerPixel", 0}
     };
 
     myCamera(const Vec3& pos, const Vec3& target, const Vec3& up, float fov, float aspectRatio, const Shader& shader)
@@ -80,20 +86,37 @@ struct myCamera {
         SetShaderValue(shader, shaderLocs["focalLength"], &focalLength, SHADER_UNIFORM_FLOAT);
         SetShaderValue(shader, shaderLocs["viewportWidth"], &viewportWidth, SHADER_UNIFORM_FLOAT);
         SetShaderValue(shader, shaderLocs["viewportHeight"], &viewportHeight, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(shader, shaderLocs["samplesPerPixel"], &samplesPerPixel, SHADER_UNIFORM_INT);
     }
+};
+
+struct material{
+    int type;
+    Vec3 col;
+    float fuzz;
+    float refractionIndex;
+    float emissionStr;
+    Vec3 emissionCol;
+
+    material(int type, const Vec3& col, float fuzz, float refractionIndex, float emissionStr, const Vec3& emissionCol):
+        type(type), col(col), fuzz(fuzz), refractionIndex(refractionIndex),
+        emissionStr(emissionStr), emissionCol(emissionCol){}
 };
 
 struct Sphere{
     Vec3 center;
     float r;
+    material mat;
 
-    Sphere(const Vec3& center, float r): center(center), r(r){}
+    Sphere(const Vec3& center, float r, const material& mat): center(center), r(r), mat(mat){}
 };
 
 class Screen : public Entity{
     private:
         Shader shader {LoadShader(0, "../resources/shaders/test.fs")};
         RenderTexture2D screenTexture {LoadRenderTexture(SCREEN_W, SCREEN_H)}; // have to use a render texture for correct fragtexcoords
+
+        float time {};
 
         myCamera camera;
 
@@ -121,10 +144,16 @@ class Screen : public Entity{
                 spheres.push_back(Sphere({range*GetRandomValue(-10, 10),range*GetRandomValue(-10, 10), -1},GetRandomValue(1, 10)/10.0));
             }
             */
-            spheres.push_back(Sphere({1,0,-1},0.5));
-            spheres.push_back(Sphere({-1,0,-1},0.5));
+            material ground {LAMBERTIAN, {0.8,0.8,0}, 0,0,0,{}};
+            material left {METAL, {0.8,0.8,0.8}, 0.3,0,0,{}};
+            material center {LAMBERTIAN, {0.1,0.2,0.5}, 0,0,0,{}};
+            material right {METAL, {0.8,0.6,0.2}, 1,0,0,{}};
 
-            spheres.push_back(Sphere({0,-100.5,-1},100.0));
+            spheres.push_back(Sphere({0,0,-1.2},0.5,center));
+            spheres.push_back(Sphere({-1,0,-1},0.5,left));
+            spheres.push_back(Sphere({1,0,-1},0.5,right));
+
+            spheres.push_back(Sphere({0,-100.5,-1},100.0,ground));
 
             // -------------------------------------- //
         }
@@ -133,6 +162,7 @@ class Screen : public Entity{
         }
 
         void update(float dt) override{
+            time += dt;
             Vec3 move = Vec3();
             const float cameraMoveSpeed = 0.01;
             const float cameraRotSpeed = 1;
@@ -163,27 +193,65 @@ class Screen : public Entity{
             if(IsKeyDown(KEY_DOWN))
                 camera.dir = camera.dir.rotate(camera.u, -cameraRotSpeed*DEG2RAD);
 
+            if(IsKeyDown(KEY_E))
+                camera.updateFov(camera.fov-1);
+            if(IsKeyDown(KEY_Q))
+                camera.updateFov(camera.fov+1);
+
+            if(IsKeyDown(KEY_ONE))
+                spheres.at(0).center += Vec3(0.01, 0, 0);
+            if(IsKeyDown(KEY_TWO))
+                spheres.at(0).center -= Vec3(0.01, 0, 0);
+
             camera.updatePos(camera.pos + cameraMoveSpeed*move);
             camera.lookAt(camera.pos + camera.dir);
+        }
+
+        void setSphereUniforms(){
+            Vec3 centers[MAX_SPHERES];
+            float radii[MAX_SPHERES];
+
+            int types[MAX_SPHERES];
+            Vec3 cols[MAX_SPHERES];
+            float fuzz[MAX_SPHERES];
+            float refracs[MAX_SPHERES];
+
+            int centersLoc {GetShaderLocation(shader, "sphereCenters")};
+            int radiiLoc {GetShaderLocation(shader, "sphereRadii")};
+            int countLoc {GetShaderLocation(shader, "sphereCount")};
+
+            int typesLoc {GetShaderLocation(shader, "materialTypes")};
+            int colsLoc {GetShaderLocation(shader, "materialCols")};
+            int fuzzLoc {GetShaderLocation(shader, "materialFuzz")};
+            int refracLoc {GetShaderLocation(shader, "materialRefractionIndices")};
+
+            int count {static_cast<int>(spheres.size())};
+            for(int i = 0; i < count; ++i){
+                centers[i] = spheres.at(i).center;
+                radii[i] = spheres.at(i).r;
+
+                types[i] = spheres.at(i).mat.type;
+                cols[i] = spheres.at(i).mat.col;
+                fuzz[i] = spheres.at(i).mat.fuzz;
+                refracs[i] = spheres.at(i).mat.refractionIndex;
+            }
+            SetShaderValueV(shader, centersLoc, centers, SHADER_UNIFORM_VEC3, count);
+            SetShaderValueV(shader, radiiLoc, radii, SHADER_UNIFORM_FLOAT, count);
+            SetShaderValue(shader, countLoc, &count, SHADER_UNIFORM_INT);
+
+            SetShaderValueV(shader, typesLoc, types, SHADER_UNIFORM_INT, count);
+            SetShaderValueV(shader, colsLoc, cols, SHADER_UNIFORM_VEC3, count);
+            SetShaderValueV(shader, fuzzLoc, fuzz, SHADER_UNIFORM_FLOAT, count);
+            SetShaderValueV(shader, refracLoc, refracs, SHADER_UNIFORM_FLOAT, count);
         }
 
         void draw() override{
             camera.setUniformValues(shader);
 
-            Vec3 centers[MAX_SPHERES];
-            float radii[MAX_SPHERES];
+            setSphereUniforms();
 
-            int centersLoc {GetShaderLocation(shader, "sphereCenters")};
-            int radiiLoc {GetShaderLocation(shader, "sphereRadii")};
-            int countLoc {GetShaderLocation(shader, "sphereCount")};
-            int count {static_cast<int>(spheres.size())};
-            for(int i = 0; i < count; ++i){
-                centers[i] = spheres.at(i).center;
-                radii[i] = spheres.at(i).r;
-            }
-            SetShaderValueV(shader, centersLoc, centers, SHADER_UNIFORM_VEC3, count);
-            SetShaderValueV(shader, radiiLoc, radii, SHADER_UNIFORM_FLOAT, count);
-            SetShaderValue(shader, countLoc, &count, SHADER_UNIFORM_INT);
+            int loc = GetShaderLocation(shader, "time");
+            SetShaderValue(shader, loc, &time, SHADER_UNIFORM_FLOAT);
 
             BeginShaderMode(shader);
             Rectangle src {0,0,SCREEN_W,-SCREEN_H};
