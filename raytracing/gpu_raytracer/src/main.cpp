@@ -142,12 +142,21 @@ class Screen : public Entity{
             SetShaderValue(shader, hLoc, &screenH, SHADER_UNIFORM_INT);
 
             // -------------------------------------- //
-            /*
             float range = 0.5;
             for(int i = 0; i < 10; ++i){
-                spheres.push_back(Sphere({range*GetRandomValue(-10, 10),range*GetRandomValue(-10, 10), -1},GetRandomValue(1, 10)/10.0));
+                float r = GetRandomValue(0, 255)/255.0;
+                float g = GetRandomValue(0, 255)/255.0;
+                float b = GetRandomValue(0, 255)/255.0;
+                float e = GetRandomValue(0, 1000)/1000.0;
+                material randMat {
+                    LAMBERTIAN, {r,g,b}, // type, col
+                    0,0, // fuzz, refractionIndex
+                    e // emission strength
+                };
+                spheres.push_back(Sphere(
+                        {range*GetRandomValue(-10, 10), 0, range*GetRandomValue(-10, 10)},
+                        GetRandomValue(1, 10)/10.0, randMat));
             }
-            */
             material ground {
                 LAMBERTIAN, {0.8,0.8,0}, // type, col
                 0,0, // fuzz, refractionIndex
