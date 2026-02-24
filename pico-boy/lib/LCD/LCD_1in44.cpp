@@ -39,13 +39,6 @@ function :	send command
 parameter:
      Reg : Command register
 ******************************************************************************/
-static void LCD_1IN44_SendCommand(UBYTE Reg)
-{
-    DEV_Digital_Write(LCD_DC_PIN, 0);
-    DEV_Digital_Write(LCD_CS_PIN, 0);
-    DEV_SPI_WriteByte(Reg);
-   // DEV_Digital_Write(LCD_CS_PIN, 1);
-}
 
 /******************************************************************************
 function :	send data
@@ -192,7 +185,7 @@ static void LCD_1IN44_SetAttributes(UBYTE Scan_dir)
     } else {
         LCD_1IN44.HEIGHT	= LCD_1IN44_HEIGHT;       
         LCD_1IN44.WIDTH   = LCD_1IN44_WIDTH;
-        MemoryAccessReg = 0X00;
+        MemoryAccessReg = 0X08; //so weird, they didnt set the RGB color swap bit (bit 3) so it reads as BGR which i think is how its wired??? idk lol
     }
 
     // Set the read / write scan direction of the frame memory
@@ -283,6 +276,7 @@ void LCD_1IN44_Display(UWORD *Image)
     LCD_1IN44_SetWindows(0, 0, LCD_1IN44.WIDTH, LCD_1IN44.HEIGHT);
     DEV_Digital_Write(LCD_DC_PIN, 1);
     DEV_Digital_Write(LCD_CS_PIN, 0);
+
     for (j = 0; j < LCD_1IN44.HEIGHT; j++) {
         DEV_SPI_Write_nByte((uint8_t *)&Image[j*LCD_1IN44.WIDTH], LCD_1IN44.WIDTH*2);
     }

@@ -33,7 +33,7 @@ pico_enable_stdio_uart(main 0)
 
 pico_add_extra_outputs(main)
 
-target_link_libraries(main Config LCD Infrared Icm20948 GUI Fonts pico_stdlib hardware_spi)
+target_link_libraries(main Config LCD Infrared Icm20948 GUI Fonts pico_stdlib hardware_spi hardware_dma)
 
 # use picotool to boot newly generated uf2 file onto the picoboy
 add_custom_command(

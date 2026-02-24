@@ -147,7 +147,7 @@ UBYTE DEV_Module_Init(void)
 {
     stdio_init_all();   
     // SPI Config
-    spi_init(SPI_PORT, 10000 * 1000);
+    spi_init(SPI_PORT, 62 * 1000 * 1000); // originally 10MHz but pico can handle up to 62.5MHz
     gpio_set_function(LCD_CLK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(LCD_MOSI_PIN, GPIO_FUNC_SPI);
     

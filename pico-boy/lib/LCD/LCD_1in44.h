@@ -47,5 +47,15 @@ void LCD_1IN44_Clear(UWORD Color);
 void LCD_1IN44_Display(UWORD *Image);
 void LCD_1IN44_DisplayWindows(UWORD Xstart, UWORD Ystart, UWORD Xend, UWORD Yend, UWORD *Image);
 void LCD_1IN44_DisplayPoint(UWORD X, UWORD Y, UWORD Color);
+void LCD_1IN44_SetWindows(UWORD Xstart, UWORD Ystart, UWORD Xend, UWORD Yend);
+
+static void LCD_1IN44_SendCommand(UBYTE Reg)
+{
+    DEV_Digital_Write(LCD_DC_PIN, 0);
+    DEV_Digital_Write(LCD_CS_PIN, 0);
+    DEV_SPI_WriteByte(Reg);
+   // DEV_Digital_Write(LCD_CS_PIN, 1);
+}
+
 void Handler_1IN44_LCD(int signo);
 #endif
